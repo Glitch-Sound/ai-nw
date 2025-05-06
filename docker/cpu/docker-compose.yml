@@ -1,0 +1,9 @@
+services:
+  polygon-ai-cpu:
+    build:
+      context: ../..
+      dockerfile: docker/cpu/Dockerfile
+    container_name: polygon_polyline_cpu
+    volumes:
+      - ../..:/app
+    working_dir: /app

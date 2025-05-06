@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  polygon-ai-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: polygon_polyline_gpu
+    volumes:
+      - ../../:/app
+    working_dir: /app
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    command: python main.py
