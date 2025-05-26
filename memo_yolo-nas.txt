@@ -1,0 +1,197 @@
+.
+├── app/
+│   ├── train.py        # 学習スクリプト
+│   ├── infer.py        # 推論スクリプト
+│   └── data/
+│       └── coco.yaml   # 学習データ設定
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml
+└── dataset/
+    └── sample/         # 学習データ格納場所（例あり）
+
+---
+
+app/train.py
+
+from super_gradients.training import Trainer, dataloaders
+from super_gradients.training.models import yolo_nas_s
+from super_gradients.training.dataloaders.datasets import COCOFormatDetectionDataset
+from super_gradients.training.metrics import DetectionMetrics
+
+trainer = Trainer(experiment_name="yolo_nas_sample", ckpt_root_dir="/app/checkpoints")
+
+train_data = dataloaders.get(
+    dataset_class=COCOFormatDetectionDataset,
+    dataset_params={"data_dir": "/app/dataset/sample", "subdir": "train"},
+    dataloader_params={"batch_size": 2, "num_workers": 2},
+    transforms={"image": None}
+)
+
+val_data = dataloaders.get(
+    dataset_class=COCOFormatDetectionDataset,
+    dataset_params={"data_dir": "/app/dataset/sample", "subdir": "val"},
+    dataloader_params={"batch_size": 2, "num_workers": 2},
+    transforms={"image": None}
+)
+
+trainer.train(
+    model=yolo_nas_s(num_classes=2),
+    training_params={
+        "max_epochs": 5,
+        "lr": 0.01,
+        "loss": "yolo_nas_loss",
+        "optimizer": "SGD",
+        "train_metrics_list": [DetectionMetrics()],
+        "valid_metrics_list": [DetectionMetrics()],
+    },
+    train_loader=train_data,
+    valid_loader=val_data
+)
+
+---
+
+app/infer.py
+
+from super_gradients.training.models import YoloNASDetectionPredictor
+from PIL import Image
+
+predictor = YoloNASDetectionPredictor(model_checkpoint_path="/app/checkpoints/yolo_nas_sample/ckpt_best.pth")
+image = Image.open("/app/dataset/sample/val/images/sample.jpg")
+result = predictor.predict(image)
+result.show()
+
+---
+
+dataset/sample/
+├── train/
+│   ├── images/
+│   │   └── sample.jpg
+│   └── annotations/
+│       └── instances_train.json
+├── val/
+│   ├── images/
+│   │   └── sample.jpg
+│   └── annotations/
+│       └── instances_val.json
+
+---
+
+docker/Dockerfile
+
+FROM python:3.10
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y libgl1-mesa-glx
+
+COPY requirements.txt requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY ./app /app
+COPY ./dataset /app/dataset
+
+---
+
+requirements.txt
+
+super-gradients==3.3.0
+Pillow
+
+---
+
+docker/docker-compose.yml
+
+version: "3.8"
+services:
+  yolonas:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./app:/app
+      - ./dataset:/app/dataset
+    working_dir: /app
+    command: ["python", "train.py"]
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+
+---
+
+実行方法
+
+# Dockerビルド
+docker compose -f docker/docker-compose.yml build
+
+# 学習実行
+docker compose -f docker/docker-compose.yml up
+
+# 推論実行（別コンテナでもOK）
+docker compose run yolonas python infer.py
+
+---
+
+dataset/sample/
+├── train/
+│   ├── images/
+│   │   └── sample.jpg
+│   └── annotations/
+│       └── instances_train.json
+├── val/
+│   ├── images/
+│   │   └── sample.jpg
+│   └── annotations/
+│       └── instances_val.json
+
+
+---
+
+{
+  "info": {
+    "description": "Sample COCO dataset",
+    "version": "1.0",
+    "year": 2025
+  },
+  "images": [
+    {
+      "id": 1,
+      "file_name": "image1.jpg",
+      "width": 640,
+      "height": 480
+    },
+    {
+      "id": 2,
+      "file_name": "image2.jpg",
+      "width": 800,
+      "height": 600
+    }
+  ],
+  "annotations": [
+    {
+      "id": 1,
+      "image_id": 1,
+      "category_id": 1,
+      "bbox": [100, 120, 150, 200],
+      "area": 30000,
+      "iscrowd": 0
+    },
+    {
+      "id": 2,
+      "image_id": 2,
+      "category_id": 1,
+      "bbox": [50, 80, 100, 150],
+      "area": 15000,
+      "iscrowd": 0
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "object",
+      "supercategory": "none"
+    }
+  ]
+}
+
+640x480
